@@ -2,13 +2,14 @@
 class Value:
     """ stores a single scalar value and its gradient """
 
-    def __init__(self, data, _children=(), _op=''):
+    def __init__(self, data, _children=(), _op='', name='temp'):
         self.data = data
         self.grad = 0
         # internal variables used for autograd graph construction
         self._backward = lambda: None
         self._prev = set(_children)
         self._op = _op # the op that produced this node, for graphviz / debugging / etc
+        self.name = name
 
     def __add__(self, other):
         other = other if isinstance(other, Value) else Value(other)
@@ -42,8 +43,11 @@ class Value:
 
         return out
 
+    def set_name(self, name):
+        self.name = name
+
     def relu(self):
-        out = Value(0 if self.data < 0 else self.data, (self,), 'ReLU')
+        out = Value(0 if self.data < 0 else self.data, (self,), 'ReLU', name="act")
 
         def _backward():
             self.grad += (out.data > 0) * out.grad
@@ -91,4 +95,4 @@ class Value:
         return other * self**-1
 
     def __repr__(self):
-        return f"Value(data={self.data}, grad={self.grad})"
+        return f"Value(data={self.data}, grad={self.grad}, name={self.name})"
