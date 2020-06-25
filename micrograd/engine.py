@@ -1,19 +1,21 @@
+import math
 
 class Value:
     """ stores a single scalar value and its gradient """
 
-    def __init__(self, data, _children=(), _op='', name='temp'):
+    def __init__(self, data, _children=(), _op='', name='tensor'):
         self.data = data
         self.grad = 0
         # internal variables used for autograd graph construction
         self._backward = lambda: None
         self._prev = set(_children)
         self._op = _op # the op that produced this node, for graphviz / debugging / etc
-        self.name = name
+        self._name = name
 
     def __add__(self, other):
         other = other if isinstance(other, Value) else Value(other)
-        out = Value(self.data + other.data, (self, other), '+')
+        op = '+'
+        out = Value(self.data + other.data, (self, other), op)
 
         def _backward():
             self.grad += out.grad
@@ -24,7 +26,8 @@ class Value:
 
     def __mul__(self, other):
         other = other if isinstance(other, Value) else Value(other)
-        out = Value(self.data * other.data, (self, other), '*')
+        op = '*'
+        out = Value(self.data * other.data, (self, other), op)
 
         def _backward():
             self.grad += other.data * out.grad
@@ -35,7 +38,8 @@ class Value:
 
     def __pow__(self, other):
         assert isinstance(other, (int, float)), "only supporting int/float powers for now"
-        out = Value(self.data**other, (self,), f'**{other}')
+        op = f'**{other}'
+        out = Value(self.data**other, (self,), op)
 
         def _backward():
             self.grad += (other * self.data**(other-1)) * out.grad
@@ -43,11 +47,31 @@ class Value:
 
         return out
 
-    def set_name(self, name):
-        self.name = name
+    def sigmoid(self):
+        return 1.0/(1 + math.exp(-self.data))
+
+    def cross_entropy(self, target):
+        """Binary case"""
+        op = "logloss(y)"
+        eps = 1e-5
+        loss = -(target * math.log(self.sigmoid()+eps) + \
+                (1 - target) * math.log((1 - self.sigmoid()+eps)))
+        out = Value(loss, (self,), op, name='logloss')
+        def _backward():
+            self.grad = self.sigmoid() - target
+        out._backward = _backward
+        return out
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, name):
+        self._name = name
 
     def relu(self):
-        out = Value(0 if self.data < 0 else self.data, (self,), 'ReLU', name="act")
+        out = Value(0 if self.data < 0 else self.data, (self,), 'ReLU', name="ReLU")
 
         def _backward():
             self.grad += (out.data > 0) * out.grad
@@ -56,7 +80,10 @@ class Value:
         return out
 
     def backward(self):
-
+        """Backprop, recursively traverse the compute graph.
+        Focus on this code in the article. Make a gif for the construction
+        of a logistic regression for stepping thru this code.
+        """
         # topological order all of the children in the graph
         topo = []
         visited = set()
@@ -66,6 +93,7 @@ class Value:
                 for child in v._prev:
                     build_topo(child)
                 topo.append(v)
+
         build_topo(self)
 
         # go one variable at a time and apply the chain rule to get its gradient
